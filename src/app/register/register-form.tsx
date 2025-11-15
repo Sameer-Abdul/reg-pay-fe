@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Formik, Form, Field, ErrorMessage, FormikHelpers, useField } from 'formik';
+import { Formik, Form, FormikHelpers, useField } from 'formik';
 import * as Yup from 'yup';
 import { Tenant, fetchTenants } from '@/services/tenantService';
 
@@ -15,19 +15,18 @@ interface RegistrationFormValues {
   email: string;
   password: string;
   confirmPassword: string;
+  gender: string;
   maritalStatus: string;
   address: string;
-  gender: string;
-  course: string;
   state: string;
   district: string;
   mandal: string;
+  course: string;
   schoolCorrespondentName: string;
   schoolCorrespondentPhone: string;
   schoolCorrespondentEmail: string;
 }
 
-// Interface for form field props
 interface FormFieldProps {
   label: string;
   name: string;
@@ -41,7 +40,6 @@ interface FormFieldProps {
   children?: React.ReactNode;
 }
 
-// Reusable form field component
 const FormField: React.FC<FormFieldProps> = ({
   label,
   name,
@@ -81,15 +79,10 @@ const FormField: React.FC<FormFieldProps> = ({
       </label>
       
       <div className="mt-1">
-        {as === 'input' && (
-          <input {...inputProps} />
-        )}
+        {as === 'input' && <input {...inputProps} />}
         
         {as === 'select' && (
-          <select
-            {...inputProps}
-            onChange={handleChange}
-          >
+          <select {...inputProps} onChange={handleChange}>
             {children || (
               <>
                 <option value="">Select {label}</option>
@@ -104,11 +97,7 @@ const FormField: React.FC<FormFieldProps> = ({
         )}
         
         {as === 'textarea' && (
-          <textarea
-            {...inputProps}
-            rows={3}
-            className={`${baseClasses} h-24`}
-          />
+          <textarea {...inputProps} rows={3} className={`${baseClasses} h-24`} />
         )}
       </div>
       
@@ -121,12 +110,12 @@ const FormField: React.FC<FormFieldProps> = ({
 
 const RegisterForm: React.FC = () => {
   const router = useRouter();
-  const [isLoading, setIsLoading] = useState(false);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
   const [states, setStates] = useState<string[]>([]);
   const [districts, setDistricts] = useState<string[]>([]);
   const [mandals, setMandals] = useState<string[]>([]);
-  const [tenants, setTenants] = useState<Tenant[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const initialValues: RegistrationFormValues = {
     tenantId: '',
@@ -162,7 +151,7 @@ const RegisterForm: React.FC = () => {
       .min(8, 'Password must be at least 8 characters')
       .required('Password is required'),
     confirmPassword: Yup.string()
-      .oneOf([Yup.ref('password'), undefined], 'Passwords must match')
+      .oneOf([Yup.ref('password')], 'Passwords must match')
       .required('Please confirm your password'),
     maritalStatus: Yup.string().required('Marital status is required'),
     address: Yup.string().required('Address is required'),
@@ -180,84 +169,60 @@ const RegisterForm: React.FC = () => {
       .required('School correspondent email is required'),
   });
 
-  // Load states and tenants on component mount
-  useEffect(() => {
-    const fetchInitialData = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        
-        // Fetch states and tenants in parallel
-        const [statesResponse, tenantsData] = await Promise.all([
-          fetch('/api/register/states').catch(err => {
-            console.error('Error fetching states:', err);
-            return { ok: false, json: () => ({ success: false, error: 'Failed to load states' })};
-          }),
-          // Fetch tenants from NestJS backend
-          fetchTenants()
-        ]);
-
-        const statesData = await statesResponse.json();
-
-        if (statesData.success) {
-          setStates(statesData.data);
-        } else {
-          console.error('States API error:', statesData.error);
-          setError(statesData.error || 'Failed to load states');
-        }
-
-        console.log('Successfully loaded tenants:', tenantsData);
-        setTenants(tenantsData);
-      } catch (err) {
-        console.error('Unexpected error in fetchInitialData:', err);
-        setError('Error loading data. Please try again later.');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchInitialData();
-  }, []);
-
-  const loadDistricts = async (state: string) => {
-    if (!state) return;
+  const handleSubmit = async (
+    values: RegistrationFormValues,
+    { setSubmitting }: FormikHelpers<RegistrationFormValues>
+  ) => {
     try {
       setIsLoading(true);
-      const response = await fetch(
-        `/api/register/districts?state=${encodeURIComponent(state)}`
-      );
+      setError(null);
+      
+      const response = await fetch('/api/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(values),
+      });
+
       const data = await response.json();
-      if (data.success) {
-        setDistricts(data.data);
-      } else {
-        setError(data.error || 'Failed to load districts');
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Registration failed');
       }
+
+      router.push('/login?registered=true');
     } catch (err) {
-      setError('Error loading districts. Please try again.');
-      console.error('Error loading districts:', err);
+      setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
       setIsLoading(false);
+      setSubmitting(false);
+    }
+  };
+
+  const loadDistricts = async (state: string) => {
+    try {
+      const response = await fetch(`/api/locations/districts?state=${encodeURIComponent(state)}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        setDistricts(data.data);
+      }
+    } catch (err) {
+      console.error('Error loading districts:', err);
     }
   };
 
   const loadMandals = async (district: string) => {
-    if (!district) return;
     try {
-      setIsLoading(true);
-      const response = await fetch(
-        `/api/register/mandals?district=${encodeURIComponent(district)}`
-      );
+      const response = await fetch(`/api/locations/mandals?district=${encodeURIComponent(district)}`);
       const data = await response.json();
+      
       if (data.success) {
         setMandals(data.data);
-      } else {
-        setError(data.error || 'Failed to load mandals');
       }
     } catch (err) {
-      setError('Error loading mandals. Please try again.');
       console.error('Error loading mandals:', err);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -271,6 +236,7 @@ const RegisterForm: React.FC = () => {
     setFieldValue('mandal', '');
     setDistricts([]);
     setMandals([]);
+    
     if (state) {
       await loadDistricts(state);
     }
@@ -284,286 +250,279 @@ const RegisterForm: React.FC = () => {
     setFieldValue('district', district);
     setFieldValue('mandal', '');
     setMandals([]);
+    
+    if (district) {
+      await loadMandals(district);
+    }
+  };
+
+  // Load initial data
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        setIsLoading(true);
+        const [tenantsRes, statesRes] = await Promise.all([
+          fetchTenants(),
+          fetch('/api/locations/states').then(res => res.json())
+        ]);
+        
+        setTenants(tenantsRes);
+        
+        if (statesRes.success) {
+          setStates(statesRes.data);
+        }
+      } catch (err) {
+        console.error('Error loading initial data:', err);
+        setError('Failed to load initial data. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadInitialData();
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white shadow rounded-lg overflow-hidden">
+          <div className="px-6 py-5 border-b border-gray-200">
+            <h3 className="text-lg font-medium leading-6 text-gray-900">
+              Registration Form
+            </h3>
+          </div>
+          
+          {error && (
+            <div className="bg-red-50 border-l-4 border-red-400 p-4">
+              <div className="flex">
+                <div className="shrink-0">
+                  <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-red-700">{error}</p>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      ) : (
-        <p className="text-sm text-gray-500">
-          Select an organization to see details
-        </p>
-      )}
-    </div>
-  )}
-</div>
+          )}
+          
+          <Formik
+            initialValues={initialValues}
+            validationSchema={validationSchema}
+            onSubmit={handleSubmit}
+          >
+            {({ isSubmitting, setFieldValue, values }) => (
+              <Form className="space-y-6 p-6">
+                {/* Organization Selection */}
+                <div className="space-y-6 bg-gray-50 p-6 rounded-lg border border-gray-100">
+                  <div className="flex items-center">
+                    <div className="flex items-center justify-center h-10 w-10 rounded-full bg-indigo-100 text-indigo-600 mr-3">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm3 1h6v2H7V5zm0 4h6v2H7V9zm0 4h6v2H7v-2z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <h2 className="text-xl font-semibold text-gray-800">Organization</h2>
                   </div>
-
-                  {/* Personal Details Section */}
-                  <div className="space-y-6 bg-gray-50 p-6 rounded-lg border border-gray-100">
-                    <div className="flex items-center">
-                      <div className="flex items-center justify-center h-10 w-10 rounded-full bg-indigo-100 text-indigo-600 mr-3">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-5 w-5"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                      </div>
-                      <h2 className="text-xl font-semibold text-gray-800">
-                        Personal Details
-                      </h2>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-                      <div className="space-y-1">
-                        <FormField
-                          label="Gender"
-                          name="gender"
-                          as="select"
-                          className="bg-white rounded-lg"
-                        >
-                          <option value="">Select Gender</option>
-                          <option value="Male">Male</option>
-                          <option value="Female">Female</option>
-                          <option value="Other">Other</option>
-                        </FormField>
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          label="Marital Status"
-                          name="maritalStatus"
-                          as="select"
-                          className="bg-white rounded-lg"
-                        >
-                          <option value="">Select Marital Status</option>
-                          <option value="Single">Single</option>
-                          <option value="Married">Married</option>
-                          <option value="Divorced">Divorced</option>
-                          <option value="Widowed">Widowed</option>
-                        </FormField>
-                      </div>
-                      <div className="space-y-1 md:col-span-2">
-                        <FormField
-                          label="Address"
-                          name="address"
-                          as="textarea"
-                          className="bg-white rounded-lg"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          label="State"
-                          name="state"
-                          as="select"
-                          onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                            handleStateChange(e, setFieldValue)
-                          }
-                          disabled={isLoading}
-                          options={states}
-                          className="bg-white rounded-lg"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          label="District"
-                          name="district"
-                          as="select"
-                          onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                            handleDistrictChange(e, setFieldValue)
-                          }
-                          disabled={!values.state || isLoading}
-                          options={districts}
-                          className="bg-white rounded-lg"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          label="Mandal"
-                          name="mandal"
-                          as="select"
-                          disabled={!values.district || isLoading}
-                          options={mandals}
-                          className="bg-white rounded-lg"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Professional Information */}
-                  <div className="space-y-6 bg-gray-50 p-6 rounded-lg border border-gray-100">
-                    <div className="flex items-center">
-                      <div className="flex items-center justify-center h-10 w-10 rounded-full bg-indigo-100 text-indigo-600 mr-3">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-5 w-5"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                        >
-                          <path
-                            d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 01.287.193l4.5 4.5a1 1 0 01-1.414 1.414l-4.12-4.121-5.7 2.442a1 1 0 01-1.292-.414l-3-5a1 1 0 01.24-1.25l7-6z"
-                          />
-                          <path
-                            d="M3.5 16.5l3.5-1.5 4.5 4.5 3.5-1.5-1.5-3.5 4.5-4.5-1.5-3.5-3.5 1.5-4.5-4.5-1.5 3.5-4.5 4.5 1.5 3.5z"
-                          />
-                        </svg>
-                      </div>
-                      <h2 className="text-xl font-semibold text-gray-800">
-                        Professional Information
-                      </h2>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-                      <div className="space-y-1">
-                        <FormField
-                          label="Designation"
-                          name="designation"
-                          as="select"
-                          className="bg-white rounded-lg"
-                        >
-                          <option value="">Select Designation</option>
-                          <option value="Teacher">Teacher</option>
-                          <option value="Headmaster">Headmaster</option>
-                          <option value="Principal">Principal</option>
-                          <option value="Lecturer">Lecturer</option>
-                          <option value="Professor">Professor</option>
-                          <option value="Other">Other</option>
-                        </FormField>
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          label="Highest Class You Teach"
-                          name="highestClassITeach"
-                          as="select"
-                          className="bg-white rounded-lg"
-                        >
-                          <option value="">Select Class</option>
-                          <option value="1st">1st</option>
-                          <option value="2nd">2nd</option>
-                          <option value="3rd">3rd</option>
-                          <option value="4th">4th</option>
-                          <option value="5th">5th</option>
-                          <option value="6th">6th</option>
-                          <option value="7th">7th</option>
-                          <option value="8th">8th</option>
-                          <option value="9th">9th</option>
-                          <option value="10th">10th</option>
-                          <option value="Inter">Inter</option>
-                          <option value="Degree">Degree</option>
-                          <option value="PG">PG</option>
-                        </FormField>
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          label="Course Interested In"
-                          name="course"
-                          as="select"
-                          className="bg-white rounded-lg"
-                        >
-                          <option value="Award Nomination">
-                            Award Nomination
+                  
+                  <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
+                    <div className="sm:col-span-6">
+                      <FormField
+                        label="Organization"
+                        name="tenantId"
+                        as="select"
+                        className="sm:col-span-6"
+                      >
+                        <option value="">Select Organization</option>
+                        {tenants.map((tenant) => (
+                          <option key={tenant.tenant_id} value={tenant.tenant_id}>
+                            {tenant.name}
                           </option>
-                        </FormField>
-                      </div>
+                        ))}
+                      </FormField>
                     </div>
                   </div>
+                </div>
 
-                  {/* School Correspondent Information */}
-                  <div className="space-y-6 pt-6 border-t border-gray-200">
-                    <h2 className="text-lg font-medium text-gray-900">
-                      School Correspondent Information
-                    </h2>
-                    <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
-                      <div className="sm:col-span-6">
-                        <FormField
-                          label="Correspondent Name"
-                          name="schoolCorrespondentName"
-                        />
-                      </div>
-                      <div className="sm:col-span-3">
-                        <FormField
-                          label="Correspondent Phone"
-                          name="schoolCorrespondentPhone"
-                          type="tel"
-                        />
-                      </div>
-                      <div className="sm:col-span-3">
-                        <FormField
-                          label="Correspondent Email"
-                          name="schoolCorrespondentEmail"
-                          type="email"
-                        />
-                      </div>
+                {/* Personal Details Section */}
+                <div className="space-y-6 bg-gray-50 p-6 rounded-lg border border-gray-100">
+                  <div className="flex items-center">
+                    <div className="flex items-center justify-center h-10 w-10 rounded-full bg-indigo-100 text-indigo-600 mr-3">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                      </svg>
                     </div>
+                    <h2 className="text-xl font-semibold text-gray-800">Personal Details</h2>
                   </div>
-
-                  <div className="pt-6 border-t border-gray-200 space-y-4">
-                    <div className="text-center">
-                      <p className="text-gray-600 text-sm mb-3">Already have an account?</p>
-                      <a 
-                        href="/event-scheduler/login" 
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 mb-4"
-                      >
-                        <svg className="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                        </svg>
-                        Login to Event Scheduler
-                      </a>
-                    </div>
-                    <div className="flex justify-end">
-                      <button
-                        type="submit"
-                        className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
-                        disabled={isSubmitting || isLoading}
-                      >
-                        {isSubmitting || isLoading ? (
-                          <>
-                            <svg
-                              className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-                              xmlns="http://www.w3.org/2000/svg"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                            >
-                              <circle
-                                className="opacity-25"
-                                cx="12"
-                                cy="12"
-                                r="10"
-                                stroke="currentColor"
-                                strokeWidth="4"
-                              ></circle>
-                              <path
-                                className="opacity-75"
-                                fill="currentColor"
-                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                              ></path>
-                            </svg>
-                            Processing...
-                          </>
-                        ) : (
-                          <>
-                            <svg
-                              className="-ml-1 mr-2 h-5 w-5"
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 20 20"
-                              fill="currentColor"
-                            >
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                            </svg>
-                            Register Now
-                          </>
-                        )}
-                      </button>
-                    </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <FormField
+                      label="First Name"
+                      name="firstName"
+                      type="text"
+                      className="col-span-1"
+                    />
+                    
+                    <FormField
+                      label="Middle Name"
+                      name="middleName"
+                      type="text"
+                      className="col-span-1"
+                    />
+                    
+                    <FormField
+                      label="Last Name"
+                      name="lastName"
+                      type="text"
+                      className="col-span-1"
+                    />
+                    
+                    <FormField
+                      label="Mobile Number"
+                      name="mobileNo"
+                      type="tel"
+                      className="col-span-1"
+                    />
+                    
+                    <FormField
+                      label="Email"
+                      name="email"
+                      type="email"
+                      className="col-span-1"
+                    />
+                    
+                    <FormField
+                      label="Password"
+                      name="password"
+                      type="password"
+                      className="col-span-1"
+                    />
+                    
+                    <FormField
+                      label="Confirm Password"
+                      name="confirmPassword"
+                      type="password"
+                      className="col-span-1"
+                    />
+                    
+                    <FormField
+                      label="Gender"
+                      name="gender"
+                      as="select"
+                      className="col-span-1"
+                    >
+                      <option value="">Select Gender</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                    </FormField>
+                    
+                    <FormField
+                      label="Marital Status"
+                      name="maritalStatus"
+                      as="select"
+                      className="col-span-1"
+                    >
+                      <option value="">Select Marital Status</option>
+                      <option value="Single">Single</option>
+                      <option value="Married">Married</option>
+                      <option value="Divorced">Divorced</option>
+                      <option value="Widowed">Widowed</option>
+                    </FormField>
+                    
+                    <FormField
+                      label="Address"
+                      name="address"
+                      as="textarea"
+                      className="col-span-2"
+                    />
+                    
+                    <FormField
+                      label="State"
+                      name="state"
+                      as="select"
+                      onChange={(e) => handleStateChange(e, setFieldValue)}
+                      disabled={isLoading}
+                      options={states}
+                      className="col-span-1"
+                    />
+                    
+                    <FormField
+                      label="District"
+                      name="district"
+                      as="select"
+                      onChange={(e) => handleDistrictChange(e, setFieldValue)}
+                      disabled={!values.state || isLoading}
+                      options={districts}
+                      className="col-span-1"
+                    />
+                    
+                    <FormField
+                      label="Mandal"
+                      name="mandal"
+                      as="select"
+                      disabled={!values.district || isLoading}
+                      options={mandals}
+                      className="col-span-1"
+                    />
                   </div>
-                </Form>
-              )}
-            </Formik>
-          </div>
+                </div>
+                
+                {/* School Correspondent Information */}
+                <div className="space-y-6 bg-gray-50 p-6 rounded-lg border border-gray-100">
+                  <div className="flex items-center">
+                    <div className="flex items-center justify-center h-10 w-10 rounded-full bg-indigo-100 text-indigo-600 mr-3">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
+                      </svg>
+                    </div>
+                    <h2 className="text-xl font-semibold text-gray-800">School Correspondent Information</h2>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <FormField
+                      label="Correspondent Name"
+                      name="schoolCorrespondentName"
+                      type="text"
+                      className="col-span-1"
+                    />
+                    
+                    <FormField
+                      label="Correspondent Phone"
+                      name="schoolCorrespondentPhone"
+                      type="tel"
+                      className="col-span-1"
+                    />
+                    
+                    <FormField
+                      label="Correspondent Email"
+                      name="schoolCorrespondentEmail"
+                      type="email"
+                      className="col-span-1"
+                    />
+                  </div>
+                </div>
+                
+                {/* Submit Button */}
+                <div className="flex justify-end space-x-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => router.back()}
+                    className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || isLoading}
+                    className={`inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${(isSubmitting || isLoading) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    {isSubmitting || isLoading ? 'Registering...' : 'Register'}
+                  </button>
+                </div>
+              </Form>
+            )}
+          </Formik>
         </div>
       </div>
     </div>
