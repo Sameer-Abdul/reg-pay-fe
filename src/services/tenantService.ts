@@ -1,60 +1,25 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+import { Tenant } from "../types/tenant";
 
-// Interface for tenant data
-export interface Tenant {
-  tenant_id: string;
-  name: string;
-  email: string;
-  contact_no: string;
-  address: string;
-  image_url: string;
-  license_type?: string;
-  valid_to?: string;
-}
+const API_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  "https://reg-pay-be.onrender.com";
 
-// Fetch all tenants from the NestJS backend
 export async function fetchTenants(): Promise<Tenant[]> {
   try {
-    const res = await fetch(`${API_URL}/tenants`, {
-      cache: 'no-store',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+    const response = await fetch(`${API_URL}/tenants`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
     });
 
-    if (!res.ok) {
-      const error = await res.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to fetch tenants');
+    if (!response.ok) {
+      throw new Error(`Failed to fetch tenants: ${response.status}`);
     }
 
-    const data = await res.json();
-    return data.data || [];
+    const data = await response.json();
+    return data;
   } catch (err) {
-    console.error('Error fetching tenants:', err);
+    console.error("Tenant fetch error:", err);
     return [];
-  }
-}
-
-// Fetch a single tenant by ID
-export async function fetchTenantById(id: string): Promise<Tenant | null> {
-  try {
-    const res = await fetch(`${API_URL}/tenants/${id}`, {
-      cache: 'no-store',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!res.ok) {
-      if (res.status === 404) return null;
-      const error = await res.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to fetch tenant');
-    }
-
-    const data = await res.json();
-    return data.data || null;
-  } catch (err) {
-    console.error('Error fetching tenant:', err);
-    return null;
   }
 }
