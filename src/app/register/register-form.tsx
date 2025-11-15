@@ -4,30 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Formik, Form, Field, ErrorMessage, FormikHelpers, useField } from 'formik';
 import * as Yup from 'yup';
-
-// Interface for tenant data
-interface Tenant {
-  tenant_id: string;
-  name: string;
-  email: string;
-  contact_no: string;
-  address: string;
-  image_url: string;
-  license_type?: string;
-  valid_to?: string;
-}
-
-// Interface for form values
-interface Tenant {
-  tenant_id: string;
-  name: string;
-  email: string;
-  contact_no: string;
-  address: string;
-  image_url: string;
-  license_type?: string;
-  valid_to?: string;
-}
+import { Tenant, fetchTenants } from '@/services/tenantService';
 
 interface RegistrationFormValues {
   tenantId: string;
@@ -211,27 +188,16 @@ const RegisterForm: React.FC = () => {
         setError(null);
         
         // Fetch states and tenants in parallel
-        const [statesResponse, tenantsResponse] = await Promise.all([
+        const [statesResponse, tenantsData] = await Promise.all([
           fetch('/api/register/states').catch(err => {
             console.error('Error fetching states:', err);
             return { ok: false, json: () => ({ success: false, error: 'Failed to load states' })};
           }),
-          // Fetch tenants with active licenses
-          fetch('/api/public/tenants', {
-            cache: 'no-store',
-            headers: {
-              'Cache-Control': 'no-cache, no-store, must-revalidate',
-              'Pragma': 'no-cache',
-              'Expires': '0'
-            }
-          }).catch(err => {
-            console.error('Error fetching tenants:', err);
-            return { ok: false, json: () => ({ success: false, error: 'Failed to load organizations' })};
-          })
+          // Fetch tenants from NestJS backend
+          fetchTenants()
         ]);
 
         const statesData = await statesResponse.json();
-        const tenantsData = await tenantsResponse.json();
 
         if (statesData.success) {
           setStates(statesData.data);
@@ -240,15 +206,8 @@ const RegisterForm: React.FC = () => {
           setError(statesData.error || 'Failed to load states');
         }
 
-        if (tenantsData.success) {
-          console.log('Successfully loaded tenants:', tenantsData.data);
-          setTenants(tenantsData.data);
-        } else {
-          console.error('Tenants API error:', tenantsData.error);
-          // Don't show error for tenants as it's not critical for registration
-          // Just log it and continue with an empty tenants list
-          setTenants([]);
-        }
+        console.log('Successfully loaded tenants:', tenantsData);
+        setTenants(tenantsData);
       } catch (err) {
         console.error('Unexpected error in fetchInitialData:', err);
         setError('Error loading data. Please try again later.');
@@ -325,203 +284,17 @@ const RegisterForm: React.FC = () => {
     setFieldValue('district', district);
     setFieldValue('mandal', '');
     setMandals([]);
-    if (district) {
-      await loadMandals(district);
-    }
-  };
-
-  const handleSubmit = async (
-    values: RegistrationFormValues,
-    { setSubmitting, setFieldError }: FormikHelpers<RegistrationFormValues>
-  ) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Create a copy of values to avoid mutating the original
-      const { confirmPassword, ...submitData } = values;
-      
-      const response = await fetch('/api/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(submitData),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        const registrationId = data.data.id;
-        sessionStorage.setItem('registrationId', registrationId);
-        router.push(`/payment/new?registrationId=${registrationId}`);
-      } else {
-        // Check if this is an email already exists error
-        if (data.field === 'email') {
-          setFieldError('email', data.message || 'This email is already registered');
-          // Scroll to the email field
-          document.getElementById('email')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        } else {
-          setError(data.message || 'Registration failed. Please try again.');
-        }
-      }
-    } catch (err) {
-      console.error('Registration error:', err);
-      setError('An error occurred during registration. Please try again.');
-    } finally {
-      setIsLoading(false);
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-linear-to-br from-blue-50 to-indigo-50 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-10">
-          <h1 className="text-3xl font-bold text-gray-800">Registration Form</h1>
-          <p className="mt-3 text-gray-600">
-            Please fill in your details to complete your registration.
-          </p>
-        </div>
-
-        {error && (
-          <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r">
-            <div className="flex items-center">
-              <div className="shrink-0">
-                <svg
-                  className="h-5 w-5 text-red-500"
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm font-medium text-red-700">{error}</p>
-              </div>
             </div>
           </div>
-        )}
-
-        <div className="bg-white shadow-xl rounded-xl overflow-hidden">
-          <div className="p-6 sm:p-8">
-            <Formik
-              initialValues={initialValues}
-              validationSchema={validationSchema}
-              onSubmit={handleSubmit}
-            >
-              {({ values, errors, touched, setFieldValue, isSubmitting }) => (
-                <Form className="space-y-8">
-                  {/* Personal Information Section */}
-                  <div className="space-y-6 bg-gray-50 p-6 rounded-lg border border-gray-100">
-                    <div className="flex items-center">
-                      <div className="flex items-center justify-center h-10 w-10 rounded-full bg-indigo-100 text-indigo-600 mr-3">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-5 w-5"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                      </div>
-                      <h2 className="text-xl font-semibold text-gray-800">
-                        Personal Information
-                      </h2>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-                      <div className="space-y-1">
-                        <FormField
-                          label="First Name"
-                          name="firstName"
-                          className="bg-white rounded-lg"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          label="Middle Name (Optional)"
-                          name="middleName"
-                          className="bg-white rounded-lg"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          label="Last Name"
-                          name="lastName"
-                          className="bg-white rounded-lg"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          label="Mobile Number"
-                          name="mobileNo"
-                          type="tel"
-                          className="bg-white rounded-lg"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <div>
-                          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                            Email
-                          </label>
-                          <Field
-                            id="email"
-                            name="email"
-                            type="email"
-                            className={`mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition duration-200 sm:text-sm p-3 border ${
-                              errors.email && touched.email ? 'border-red-500' : ''
-                            }`}
-                            placeholder="Enter your email"
-                          />
-                          <ErrorMessage name="email">
-                            {(msg) => (
-                              <p className="mt-1 text-sm text-red-600">{msg}</p>
-                            )}
-                          </ErrorMessage>
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          label="Password"
-                          name="password"
-                          type="password"
-                          className="bg-white rounded-lg"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          label="Confirm Password"
-                          name="confirmPassword"
-                          type="password"
-                          className="bg-white rounded-lg"
-                        />
-                      </div>
-                      <div className="space-y-1 md:col-span-2">
-                        <FormField
-                          label="Select Tenant"
-                          name="tenantId"
-                          as="select"
-                          className="bg-white rounded-lg"
-                        >
-                          <option value="">Select Tenant</option>
-                          {tenants.map((tenant) => (
-                            <option key={tenant.tenant_id} value={tenant.tenant_id}>
-                              {tenant.name} ({tenant.license_type || 'No License'})
-                            </option>
-                          ))}
-                        </FormField>
-                      </div>
-                    </div>
+        </div>
+      ) : (
+        <p className="text-sm text-gray-500">
+          Select an organization to see details
+        </p>
+      )}
+    </div>
+  )}
+</div>
                   </div>
 
                   {/* Personal Details Section */}
